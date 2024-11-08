@@ -6,6 +6,7 @@
 // Tested by compile_test.cc
 
 #include "re2/prog.h"
+#include <set>
 
 #include <stdint.h>
 #include <string.h>
@@ -202,8 +203,18 @@ std::string Prog::DumpByteMap() {
 }
 
 // Is ip a guaranteed match at end of text, perhaps after some capturing?
-static bool IsMatch(Prog* prog, Prog::Inst* ip) {
-  for (;;) {
+bool IsMatch(Prog* prog, Prog::Inst* ip, int *match_inst_id) {
+  std::vector<int> stack;
+  std::set<int> seen;
+  int id = ip->id(prog);
+  stack.push_back(id);
+  while (stack.size() > 0) {
+    id = stack.back();
+    stack.pop_back();
+
+    Loop:
+    seen.insert(id);
+    ip = prog->inst(id);
     switch (ip->opcode()) {
       default:
         ABSL_LOG(DFATAL) << "Unexpected opcode in IsMatch: " << ip->opcode();
@@ -211,20 +222,37 @@ static bool IsMatch(Prog* prog, Prog::Inst* ip) {
 
       case kInstAlt:
       case kInstAltMatch:
-      case kInstByteRange:
       case kInstFail:
       case kInstEmptyWidth:
         return false;
 
+      case kInstByteRange:
+        if (!ip->last() && !seen.contains(id+1))
+          stack.push_back(id+1);
+        break;
+
       case kInstCapture:
       case kInstNop:
-        ip = prog->inst(ip->out());
+        if (!ip->last() && !seen.contains(id+1)) {
+          stack.push_back(id+1);
+        }
+        id = ip->out();
+        if (!seen.contains(id))
+          goto Loop;
         break;
 
       case kInstMatch:
+        *match_inst_id = id;
+        assert(prog->inst(*match_inst_id)->opcode() == kInstMatch);
         return true;
     }
   }
+  return false;
+}
+
+static bool IsMatch(Prog* prog, Prog::Inst* ip) {
+  int i;
+  return IsMatch(prog, ip, &i);
 }
 
 // Peep-hole optimizer.

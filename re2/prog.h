@@ -487,6 +487,8 @@ static inline const char* EndPtr(absl::string_view s) {
   return s.data() + s.size();
 }
 
+bool IsMatch(Prog* prog, Prog::Inst* ip, int *match_inst_id);
+
 }  // namespace re2
 
 #endif  // RE2_PROG_H_

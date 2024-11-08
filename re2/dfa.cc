@@ -849,6 +849,11 @@ void DFA::AddToQueue(Workq* q, int id, uint32_t flag) {
   int* stk = stack_.data();
   int nstk = 0;
 
+  // Will be set to the match instruction's id if we find one.
+  int match_inst_id;
+  // Whether we *know* that the queue contains a match instruction.
+  bool q_contains_match_inst = false;
+
   stk[nstk++] = id;
   while (nstk > 0) {
     ABSL_DCHECK_LE(nstk, stack_.size());
@@ -868,8 +873,20 @@ void DFA::AddToQueue(Workq* q, int id, uint32_t flag) {
     // ones that get added, but adding all of them here
     // increases the likelihood of q->contains(id),
     // reducing the amount of duplicated work.
-    if (q->contains(id))
+    if (q->contains(id)) {
+      if (q_contains_match_inst) continue;
+      // Ensure that we don't miss a guaranteed match.
+      Prog::Inst * ip = prog_->inst(id);
+      if (re2::IsMatch(prog_, ip, &match_inst_id)) {
+        assert(prog_->inst(match_inst_id)->opcode() == kInstMatch);
+        if (q->contains(match_inst_id)) {
+          q_contains_match_inst = true;
+        } else {
+          q->insert_new(match_inst_id);
+        }
+      }
       continue;
+    }
     q->insert_new(id);
 
     // Process instruction.
